@@ -1,155 +1,149 @@
-import plotly.express as px
+from typing import Tuple
+
+import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 
 BG = "rgba(0,0,0,0)"
-FONT = "#E5E7EB"
-GRID = "rgba(148,163,184,0.12)"
+TEXT = "#E5EEFf"
+GRID = "rgba(148,163,184,0.18)"
 PRIMARY = "#3B82F6"
-PRIMARY_2 = "#60A5FA"
 SUCCESS = "#10B981"
-RISK = "#EF4444"
-WARN = "#F59E0B"
-MUTED = "#334155"
+DANGER = "#EF4444"
+WARNING = "#F59E0B"
 CARD = "#111827"
 
 
-def _font():
-    return dict(family="Inter, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif", color=FONT)
-
-
-def _base_layout(fig, title):
-    fig.update_layout(
-        title=dict(text=title, x=0.02, font=dict(size=20, family=_font()["family"], color=FONT)),
+def base_layout(title: str) -> dict:
+    return dict(
+        title=dict(text=title, x=0.01, font=dict(size=20, color=TEXT)),
         paper_bgcolor=BG,
         plot_bgcolor=BG,
-        font=_font(),
-        margin=dict(l=18, r=18, t=56, b=20),
-        hoverlabel=dict(bgcolor="#0F172A", font_color="#E5E7EB", bordercolor="rgba(255,255,255,0.08)"),
-        showlegend=False,
-        bargap=0.32,
-        modebar_remove=["zoom", "pan", "select", "lasso2d", "autoScale", "toImage"],
+        font=dict(color=TEXT, family="Inter, PingFang SC, Microsoft YaHei, sans-serif", size=13),
+        margin=dict(l=24, r=24, t=60, b=30),
+        xaxis=dict(showgrid=True, gridcolor=GRID, zeroline=False),
+        yaxis=dict(showgrid=False, zeroline=False),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT)),
+        hoverlabel=dict(bgcolor="#0B1220", font_color="#F8FAFC"),
     )
-    try:
-        fig.update_layout(barcornerradius=10)
-    except Exception:
-        pass
+
+
+
+def _top3_colors(n: int, horizontal=False):
+    cols = [PRIMARY] * n
+    for i in range(min(3, n)):
+        cols[i] = [DANGER, WARNING, SUCCESS][i]
+    return cols
+
+
+
+def fig_priority_bar(df: pd.DataFrame) -> go.Figure:
+    data = df.head(8).sort_values("优先级指数", ascending=True)
+    colors = _top3_colors(len(data))[::-1]
+    fig = go.Figure(go.Bar(
+        x=data["优先级指数"],
+        y=data["knowledge_point"],
+        orientation="h",
+        marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.08)", width=1)),
+        text=[f"{v:.2f}" for v in data["优先级指数"]],
+        textposition="outside",
+        hovertemplate="知识点：%{y}<br>优先级指数：%{x:.2f}<extra></extra>",
+    ))
+    fig.update_layout(**base_layout("知识点优先级排序（Top3高亮）"), bargap=0.34)
+    fig.update_xaxes(title="优先级指数", showgrid=True, gridcolor=GRID)
+    fig.update_yaxes(title="")
     return fig
 
 
-def plot_priority_bar(df):
-    d = df.copy().sort_values("priority_index", ascending=True).tail(8)
-    top3 = set(d.sort_values("priority_index", ascending=False).head(3)["knowledge_point"])
-    d["color"] = d["knowledge_point"].apply(lambda x: RISK if x in top3 else PRIMARY)
+
+def fig_difficulty_bar(df: pd.DataFrame) -> go.Figure:
+    order = ["基础题", "中档题", "提升题"]
+    plot_df = df.copy()
+    plot_df["difficulty_group"] = pd.Categorical(plot_df["difficulty_group"], categories=order, ordered=True)
+    plot_df = plot_df.sort_values("difficulty_group")
+    colors = [SUCCESS if v >= 0.75 else WARNING if v >= 0.55 else DANGER for v in plot_df["正确率"]]
+    fig = go.Figure(go.Bar(
+        x=plot_df["difficulty_group"],
+        y=plot_df["正确率"] * 100,
+        marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.08)", width=1.2)),
+        text=[f"{v*100:.1f}%" for v in plot_df["正确率"]],
+        textposition="outside",
+        hovertemplate="难度：%{x}<br>正确率：%{y:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(**base_layout("难度层级 vs 正确率"), bargap=0.45)
+    fig.update_yaxes(title="正确率(%)", range=[0, 100], showgrid=True, gridcolor=GRID)
+    fig.update_xaxes(title="")
+    return fig
+
+
+
+def fig_risk_bar(df: pd.DataFrame) -> go.Figure:
+    data = df.head(8).sort_values("风险指数", ascending=True)
+    colors = [DANGER if x == "高风险" else WARNING if x == "波动层" else PRIMARY for x in data["分层"]]
+    fig = go.Figure(go.Bar(
+        x=data["风险指数"],
+        y=data["student_name"],
+        orientation="h",
+        marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.08)", width=1)),
+        text=[f"{v:.1f}" for v in data["风险指数"]],
+        textposition="outside",
+        hovertemplate="学生：%{y}<br>风险指数：%{x:.1f}<extra></extra>",
+    ))
+    fig.update_layout(**base_layout("风险学生识别"), bargap=0.34)
+    fig.update_xaxes(title="风险指数", showgrid=True, gridcolor=GRID)
+    fig.update_yaxes(title="")
+    return fig
+
+
+
+def fig_gain_line(df: pd.DataFrame) -> go.Figure:
+    data = df.head(8).sort_values("教学收益预测", ascending=False)
     fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            x=d["priority_index"],
-            y=d["knowledge_point"],
-            orientation="h",
-            marker=dict(color=d["color"], line=dict(color="rgba(255,255,255,0.12)", width=1)),
-            text=[f"{v:.2f}" for v in d["priority_index"]],
-            textposition="outside",
-            hovertemplate="知识点：%{y}<br>优先级指数：%{x:.2f}<extra></extra>",
-        )
-    )
-    fig.update_xaxes(showgrid=True, gridcolor=GRID, zeroline=False, title=None)
-    fig.update_yaxes(showgrid=False, title=None)
-    return _base_layout(fig, "知识点优先级排序（Top3 高亮）")
+    fig.add_trace(go.Scatter(
+        x=data["knowledge_point"],
+        y=data["教学收益预测"],
+        mode="lines+markers+text",
+        line=dict(color=PRIMARY, width=3),
+        marker=dict(size=10, color=SUCCESS, line=dict(color="#ffffff22", width=1)),
+        text=[f"{v:.2f}" for v in data["教学收益预测"]],
+        textposition="top center",
+        hovertemplate="知识点：%{x}<br>教学收益预测：%{y:.2f}<extra></extra>",
+    ))
+    fig.update_layout(**base_layout("教学收益预测"))
+    fig.update_xaxes(title="", showgrid=False)
+    fig.update_yaxes(title="收益值", showgrid=True, gridcolor=GRID)
+    return fig
 
 
-def plot_difficulty_accuracy(df):
-    d = df.copy().sort_values("accuracy_rate", ascending=True)
-    low3 = set(d.head(min(3, len(d)))["difficulty"])
-    colors = [RISK if x in low3 else PRIMARY_2 for x in d["difficulty"]]
-    fig = go.Figure(
-        go.Bar(
-            x=d["difficulty"],
-            y=d["accuracy_rate"],
-            marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.10)", width=1)),
-            text=[f"{v:.1%}" for v in d["accuracy_rate"]],
-            textposition="outside",
-            hovertemplate="难度：%{x}<br>正确率：%{y:.1%}<extra></extra>",
-        )
-    )
-    fig.update_yaxes(range=[0, 1], tickformat=".0%", showgrid=True, gridcolor=GRID)
-    fig.update_xaxes(showgrid=False)
-    return _base_layout(fig, "难度层级 vs 正确率")
+
+def fig_option_donut(df: pd.DataFrame, question_id: str) -> go.Figure:
+    data = df[df["题目ID"] == question_id].copy()
+    colors = [PRIMARY if x == "否" else SUCCESS for x in data["是否正确项"]]
+    fig = go.Figure(go.Pie(
+        labels=[f"{r['选项']}：{r['选项内容'][:10]}" for _, r in data.iterrows()],
+        values=data["人数"],
+        hole=0.58,
+        marker=dict(colors=colors, line=dict(color="#0B1220", width=2)),
+        textinfo="percent+label",
+        sort=False,
+    ))
+    fig.update_layout(**base_layout(f"{question_id} 选项分布"))
+    return fig
 
 
-def plot_trend_line(df):
-    d = df.copy()
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=d["label"],
-            y=d["accuracy_rate"],
-            mode="lines+markers+text",
-            line=dict(color=SUCCESS, width=3, shape="spline"),
-            marker=dict(size=10, color=SUCCESS, line=dict(color="#ffffff", width=1)),
-            text=[f"{v:.0%}" for v in d["accuracy_rate"]],
-            textposition="top center",
-            hovertemplate="%{x}<br>正确率：%{y:.1%}<extra></extra>",
-        )
-    )
-    fig.update_yaxes(range=[0, 1], tickformat=".0%", gridcolor=GRID)
-    fig.update_xaxes(showgrid=False)
-    return _base_layout(fig, "作答阶段趋势（折线）")
 
-
-def plot_risk_bar(df):
-    d = df.copy().head(10).sort_values("risk_index", ascending=True)
-    high3 = set(d.sort_values("risk_index", ascending=False).head(min(3, len(d)))["student_name"])
-    d["color"] = d["student_name"].apply(lambda x: RISK if x in high3 else WARN)
-    fig = go.Figure(
-        go.Bar(
-            x=d["risk_index"],
-            y=d["student_name"],
-            orientation="h",
-            marker=dict(color=d["color"], line=dict(color="rgba(255,255,255,0.12)", width=1)),
-            text=[f"{x:.1f}" for x in d["risk_index"]],
-            textposition="outside",
-            hovertemplate="学生：%{y}<br>风险指数：%{x:.2f}<extra></extra>",
-        )
-    )
-    fig.update_xaxes(showgrid=True, gridcolor=GRID)
-    fig.update_yaxes(showgrid=False)
-    return _base_layout(fig, "学生风险指数排序（Top3 高亮）")
-
-
-def plot_risk_donut(df):
-    counts = df["risk_level"].value_counts().reindex(["高风险", "波动层", "稳定层"]).fillna(0)
-    fig = go.Figure(
-        go.Pie(
-            labels=counts.index,
-            values=counts.values,
-            hole=0.62,
-            marker=dict(colors=[RISK, WARN, SUCCESS], line=dict(color="#0F172A", width=2)),
-            textinfo="label+percent",
-            textfont=dict(color=FONT, size=13),
-            hovertemplate="层级：%{label}<br>人数：%{value}<extra></extra>",
-        )
-    )
-    fig.update_layout(
-        annotations=[dict(text="学生分层", x=0.5, y=0.5, font=dict(size=18, color=FONT), showarrow=False)],
-    )
-    return _base_layout(fig, "风险学生分层（环形）")
-
-
-def plot_teaching_gain(df):
-    d = df.copy().sort_values("teaching_gain", ascending=True).tail(8)
-    top3 = set(d.sort_values("teaching_gain", ascending=False).head(min(3, len(d)))["knowledge_point"])
-    colors = [SUCCESS if x in top3 else PRIMARY for x in d["knowledge_point"]]
-    fig = go.Figure(
-        go.Bar(
-            x=d["teaching_gain"],
-            y=d["knowledge_point"],
-            orientation="h",
-            marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.12)", width=1)),
-            text=[f"{x:.2f}" for x in d["teaching_gain"]],
-            textposition="outside",
-            hovertemplate="知识点：%{y}<br>教学收益预测：%{x:.2f}<extra></extra>",
-        )
-    )
-    fig.update_xaxes(showgrid=True, gridcolor=GRID)
-    fig.update_yaxes(showgrid=False)
-    return _base_layout(fig, "教学收益预测（Top3 高亮）")
+def fig_distractor_bar(df: pd.DataFrame, question_id: str) -> go.Figure:
+    data = df[df["题目ID"] == question_id].sort_values("错误人数", ascending=True)
+    fig = go.Figure(go.Bar(
+        x=data["错误人数"],
+        y=[f"{o}项" for o in data["错误选项"]],
+        orientation="h",
+        marker=dict(color=[DANGER, WARNING, PRIMARY][:len(data)] if len(data) <= 3 else [DANGER]*len(data)),
+        text=[f"{v*100:.1f}%" for v in data["错误占比"]],
+        textposition="outside",
+        hovertemplate="错误选项：%{y}<br>人数：%{x}<extra></extra>",
+    ))
+    fig.update_layout(**base_layout(f"{question_id} 错误选项占比"), bargap=0.36)
+    fig.update_xaxes(title="错误人数", showgrid=True, gridcolor=GRID)
+    fig.update_yaxes(title="")
+    return fig
